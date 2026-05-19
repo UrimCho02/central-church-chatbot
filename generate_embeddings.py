@@ -78,9 +78,10 @@ dimension = len(embeddings[0])
 index = faiss.IndexFlatL2(dimension)
 index.add(np.array(embeddings).astype("float32"))
 
-# 📌 9. 저장
-faiss.write_index(index, "sermon_index.faiss")
-np.save("sermon_metadata.npy", np.array(metadata, dtype=object))
+# 📌 9. 저장 (app.py 가 embeddings/ 에서 읽으므로 경로 통일)
+os.makedirs("embeddings", exist_ok=True)
+faiss.write_index(index, "embeddings/sermon_index.faiss")
+np.save("embeddings/sermon_metadata.npy", np.array(metadata, dtype=object))
 
 # 버전명 저장 (app.py에서 불러올 수 있도록)
 version_info = {
