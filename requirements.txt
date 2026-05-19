@@ -1,0 +1,34 @@
+# ============================================================
+# Christian Sermon Counseling Chatbot - Python Dependencies
+# ============================================================
+# Python: 3.11 (확인됨: 3.11.7)
+#
+# 시스템 의존성 (pip로 설치 불가, 별도 설치 필요):
+#   - ffmpeg : openai-whisper 동작에 필수
+#              Windows: https://www.gyan.dev/ffmpeg/builds/  (PATH 등록)
+#              macOS:   brew install ffmpeg
+#              Linux:   sudo apt install ffmpeg
+#
+# 참고:
+#   - torch는 openai-whisper 설치 시 pip가 자동으로 함께 설치합니다.
+#     단, CUDA GPU 가속을 사용하려면 PyTorch 공식 가이드에 따라
+#     CUDA 버전에 맞는 torch를 별도로 설치하는 것을 권장합니다.
+#     https://pytorch.org/get-started/locally/
+# ============================================================
+
+# --- 핵심 (웹 UI / 환경 설정) ---
+streamlit==1.44.0
+python-dotenv==1.0.1
+
+# --- AI / ML ---
+openai==1.61.1
+openai-whisper==20240930
+faiss-cpu==1.10.0
+
+# --- 데이터 처리 ---
+numpy==2.1.3
+pandas==2.2.3
+openpyxl==3.1.5
+
+# --- 유틸리티 (외부 도구) ---
+yt-dlp==2025.1.26

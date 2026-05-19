@@ -1,0 +1,59 @@
+# ============================================================
+# Christian Sermon Counseling Chatbot - .gitignore
+# ============================================================
+
+# === Secrets ===
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# === 대용량 원본 오디오 (재다운로드 가능, ~19GB) ===
+downloads/
+
+# === 임베딩 바이너리 (재생성 가능, GitHub 100MB 제한 회피) ===
+sermon_index.faiss
+sermon_metadata.npy
+embeddings/
+
+# === 사용자 상담 로그 (개인정보·신앙 상담 내용) ===
+logs/
+
+# === yt-dlp / 파이프라인 상태 파일 ===
+downloaded.txt
+urls_to_download.txt
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.python-version
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === Jupyter ===
+.ipynb_checkpoints/
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Whisper 모델 캐시 (홈 디렉터리에 저장되나 로컬 캐시 대비) ===
+*.pt
