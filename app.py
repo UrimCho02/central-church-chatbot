@@ -30,11 +30,20 @@ def search_similar_docs(query, top_k=5):
 # ✅ 4. 상담 프롬프트 생성
 def generate_prompt(contexts, user_question):
     context_text = "\n---\n".join(contexts)
-    return f"""
-당신은 신앙 상담가입니다. 사용자의 질문에 대해 아래 설교를 바탕으로 신앙 조언을 해주세요.
-설교에 없는 내용은 답하지 말고 목사님께 직접 상담하라고 답하세요.
-설교 내용을 참고하자면, 이라고 직접 말할 필요는 없어요.
-설교 마지막에 ~~기원합니다, ~~축복합니다와 같은 말은 빼고 답하세요.
+    return f"""당신은 따뜻하고 깊이 있는 목회적 신앙 상담가입니다.
+아래 [설교 내용]에 담긴 가르침에 근거하여 사용자의 질문에 답하세요.
+
+- 답변은 반드시 [설교 내용]에 실제로 담긴 내용에 근거해야 합니다.
+  설교에 없는 일반적 위로나 세상적 조언을 지어내지 마세요.
+- 더 깊은 상담이나 구체적인 인도가 필요한 부분은, 담임 목사님과
+  상담하거나 교회를 찾아가도록 자연스럽게 안내해 주세요.
+- 단, 신앙의 문제를 세상의 법(법적 근거·법률·법적 지침 등)과 절대
+  연관 짓지 마세요. 신앙 상담은 하나님의 뜻과 성경적 원칙에 관한 것이지
+  세상 법과는 무관합니다.
+- "설교 내용을 참고하자면" 같은 표현은 쓰지 말고, 설교를 자연스럽게 녹여 답하세요.
+- "~~기원합니다", "~~축복합니다" 같은 맺음말은 쓰지 마세요.
+- 부드럽고 차분한 목회적 어조를 유지하되, 단순한 위로를 넘어
+  성경적 원칙에 근거해 답하세요.
 
 [설교 내용]
 {context_text}
@@ -50,7 +59,7 @@ def polish_text(text):
     user_prompt = f"다음 텍스트를 더 자연스럽고 매끄럽게 정리해줘:\n\n{text}"
 
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -62,7 +71,7 @@ def polish_text(text):
 def get_gpt_response(prompt):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "당신은 신앙 상담가입니다."},
             {"role": "user", "content": prompt}
