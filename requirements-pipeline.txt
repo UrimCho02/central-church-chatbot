@@ -1,0 +1,24 @@
+# ============================================================
+# 임베딩 생성 파이프라인 의존성 (옵션)
+# ============================================================
+# 이 파일은 새 설교를 임베딩에 추가할 때만 필요합니다.
+# 챗봇(API/Streamlit) 자체 동작에는 불필요.
+#
+# 시스템 의존성:
+#   - ffmpeg : openai-whisper 동작에 필수
+#              Windows: https://www.gyan.dev/ffmpeg/builds/  (PATH 등록)
+#              macOS:   brew install ffmpeg
+#              Linux:   sudo apt install ffmpeg
+#
+# 사용법 (베이스 의존성 설치 후):
+#   pip install -r requirements-pipeline.txt
+#
+# 참고:
+#   - torch는 openai-whisper 설치 시 pip가 자동으로 함께 설치합니다.
+#     CUDA GPU 가속이 필요하면 PyTorch 공식 가이드 참고.
+#     https://pytorch.org/get-started/locally/
+# ============================================================
+
+# --- STT / 영상 다운로드 ---
+openai-whisper==20240930
+yt-dlp==2025.1.26
