@@ -12,11 +12,6 @@
 # === 대용량 원본 오디오 (재다운로드 가능, ~19GB) ===
 downloads/
 
-# === 임베딩 바이너리 (재생성 가능, GitHub 100MB 제한 회피) ===
-sermon_index.faiss
-sermon_metadata.npy
-embeddings/
-
 # === 사용자 상담 로그 (개인정보·신앙 상담 내용) ===
 logs/
 
