@@ -1,219 +1,165 @@
+# -*- coding: utf-8 -*-
+"""
+YouTube 자막 기반 설교 전사 수집 (구 Whisper STT 파이프라인 대체).
+
+[변경 이유 / 검증]  memory: youtube-subs-vs-whisper
+  기존: 영상 오디오(m4a) 다운로드 → Whisper medium STT (영상당 수 분).
+  변경: YouTube 한국어 자동자막(ko)을 바로 fetch (영상당 1초 미만).
+  A/B 결과 자막 품질이 Whisper 동급 이상이며, 오디오 다운로드/Whisper 단계를
+  통째로 제거할 수 있어 채택.
+
+[흐름]
+  1. 채널 영상 목록(제목+id) 추출 → 이미 처리된 설교는 제외
+  2. 각 영상의 ko 자동자막 VTT fetch → vtt_to_text 정제 → 경량 clean
+     → clean_transcripts/<제목>.txt
+  3. (다운스트림, 별도 실행)
+       python correct_transcripts.py     # ASR 오류 LLM 교정
+       python generate_embeddings.py      # 임베딩 → Supabase
+
+[주의]
+  - 자막은 ASR이라 신앙 어휘 오류(십일조→11조 등)가 남는다.
+    따라서 correct_transcripts.py 교정 패스는 그대로 필요하다.
+  - Windows에서 yt-dlp 출력이 cp949로 깨지지 않도록 자식 프로세스에
+    PYTHONUTF8/PYTHONIOENCODING 을 강제한다.
+  - 채널 listing 제목 영어 자동번역 방지 옵션 적용(memory: ytdlp-korean-titles).
+"""
 import os
-import subprocess
-import time
-import whisper
 import re
+import subprocess
+import sys
+
+from vtt_to_text import vtt_to_text
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 # =========================
-# 경로 설정
+# 경로 / 설정
 # =========================
 channel_url = "https://www.youtube.com/@centralchurch5467/videos"
-
-download_folder = "downloads"
-transcript_folder = "transcripts"
 clean_folder = "clean_transcripts"
+sub_tmp_folder = "subs_tmp"
 
-os.makedirs(download_folder, exist_ok=True)
-os.makedirs(transcript_folder, exist_ok=True)
 os.makedirs(clean_folder, exist_ok=True)
+os.makedirs(sub_tmp_folder, exist_ok=True)
+
+# yt-dlp 자식 프로세스가 UTF-8로 출력하도록 강제 (Windows cp949 깨짐 방지)
+_ENV = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
+# 채널 listing 시 제목이 영어로 자동번역되는 문제 방지 (memory: ytdlp-korean-titles)
+_LANG_ARGS = [
+    "--extractor-args", "youtube:lang=ko",
+    "--add-header", "Accept-Language:ko-KR,ko;q=0.9",
+]
+
+# 자막 텍스트에서 제거할 추임새/군더더기 (구 clean_text 와 동일)
+_FILLER = re.compile(r"(할렐루야|아멘|맞죠|그러니까요|뭐예요|그렇죠|여러분)")
+
 
 def normalize_name(name):
     return os.path.splitext(name)[0].strip()
 
-# =========================
-# 1. 유튜브 영상 URL 목록 추출
-# =========================
-def extract_youtube_urls():
-    output_file = "urls_to_download.txt"
 
+def sanitize_title(title):
+    """YouTube 제목 → 파일명 stem.
+    기존 clean_transcripts 파일명 규칙(':' → '_')과 일치시켜 중복 수집을 막는다."""
+    title = title.replace(":", "_")
+    title = re.sub(r'[\\/*?"<>|]', "_", title)  # Windows 파일명 금지문자
+    return title.strip()
+
+
+def clean(text):
+    """자막 텍스트 경량 정제. 줄 구조는 유지한다.
+    (correct_transcripts.py 가 줄 단위로 ~3000자 배치를 나누므로 줄바꿈이 필요)"""
+    lines = []
+    for line in text.splitlines():
+        line = _FILLER.sub("", line)
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+# =========================
+# 1. 미처리 영상 목록 추출
+# =========================
+def list_unprocessed_videos():
+    """채널 영상 중 아직 clean_transcripts 에 없는 (stem, video_id) 목록."""
     print("🌐 유튜브 영상 목록 확인 중...")
 
-    # 이미 전처리 완료된 설교 제목 목록
     processed_titles = {
         normalize_name(f)
         for f in os.listdir(clean_folder)
         if f.lower().endswith(".txt")
     }
 
-    # 유튜브 채널 영상 목록: 제목 + URL 추출
     command = [
-        "yt-dlp",
-        "--flat-playlist",
-        "-i",
-        "--print",
-        "%(title)s|||%(webpage_url)s",
-        channel_url
+        "yt-dlp", *_LANG_ARGS,
+        "--flat-playlist", "-i",
+        "--print", "%(title)s|||%(id)s",
+        channel_url,
     ]
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8", env=_ENV
+    )
 
-    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
-
-    urls_to_download = []
-
+    videos = []
     for line in result.stdout.splitlines():
         if "|||" not in line:
             continue
+        title, vid = line.split("|||", 1)
+        stem = sanitize_title(title.strip())
+        if stem in processed_titles:
+            continue
+        videos.append((stem, vid.strip()))
 
-        title, url = line.split("|||", 1)
-        title = title.strip()
-        url = url.strip()
-
-        if title not in processed_titles:
-            urls_to_download.append(url)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        for url in urls_to_download:
-            f.write(url + "\n")
-
-    print(f"✅ 새로 다운로드할 영상 수: {len(urls_to_download)}개")
-    print(f"✅ 다운로드 대상 URL이 {output_file}에 저장되었습니다!")
+    print(f"✅ 새로 수집할 영상 수: {len(videos)}개")
+    return videos
 
 
 # =========================
-# 2. m4a 오디오 다운로드
+# 2. 자막 fetch → 정제 → 저장
 # =========================
-def download_audio_m4a():
-    if not os.path.exists("urls_to_download.txt") or os.path.getsize("urls_to_download.txt") == 0:
-        print("⚠️ urls.txt 파일이 없습니다. URL 추출부터 확인하세요.")
-        return
-
-    print("📥 유튜브 오디오 다운로드 시작...")
-
+def fetch_subtitle(stem, video_id):
+    """ko 자동자막 fetch → vtt_to_text → clean → clean_transcripts/<stem>.txt.
+    성공 여부를 반환한다."""
+    out_tmpl = os.path.join(sub_tmp_folder, "%(id)s.%(ext)s")
     command = [
-        "yt-dlp",
-        "-f", "bestaudio[ext=m4a]/bestaudio",
-        "--extract-audio",
-        "--audio-format", "m4a",
-        "--audio-quality", "192K",
-        "--download-archive", "downloaded.txt",
-        "--continue",
-        "--no-overwrites",
-        "--dateafter", "20250408",
-        "-o", os.path.join(download_folder, "%(title)s.%(ext)s"),
-        "-a", "urls_to_download.txt"
+        "yt-dlp", *_LANG_ARGS,
+        "--write-auto-subs",
+        "--sub-langs", "ko",
+        "--sub-format", "vtt",
+        "--skip-download",
+        "-o", out_tmpl,
+        f"https://www.youtube.com/watch?v={video_id}",
     ]
+    subprocess.run(
+        command, env=_ENV, capture_output=True, text=True, encoding="utf-8"
+    )
 
-    subprocess.run(command)
-    print("✅ 유튜브 오디오 다운로드 완료!")
+    vtt_path = os.path.join(sub_tmp_folder, f"{video_id}.ko.vtt")
+    if not os.path.exists(vtt_path):
+        print(f"  ⚠️ ko 자막 없음 — 건너뜀: {stem[:45]}")
+        return False
 
-
-# =========================
-# 3. 아직 STT 안 된 m4a 파일 찾기
-# =========================
-def get_unprocessed_audio_files():
-    audio_files = [
-        f for f in os.listdir(download_folder)
-        if f.lower().endswith((".m4a", ".mp4", ".webm", ".mp3"))
-    ]
-
-    txt_files = [
-        os.path.splitext(f)[0]
-        for f in os.listdir(transcript_folder)
-        if f.lower().endswith(".txt")
-    ]
-
-    new_files = [
-        f for f in audio_files
-        if os.path.splitext(f)[0] not in txt_files
-    ]
-
-    return new_files
-
-
-# =========================
-# 4. Whisper STT
-# =========================
-def transcribe_files(files):
-    if not files:
-        print("✅ STT 변환할 새 오디오 파일이 없습니다.")
-        return
-
-    print(f"🧠 STT 변환할 파일 수: {len(files)}개")
-    model = whisper.load_model("medium")
-
-    start_all = time.time()
-
-    for idx, file in enumerate(files):
-        audio_path = os.path.join(download_folder, file)
-        txt_filename = os.path.splitext(file)[0] + ".txt"
-        txt_path = os.path.join(transcript_folder, txt_filename)
-
-        print(f"\n[{idx + 1}/{len(files)}] 🎧 STT 변환 중: {file}")
-        start = time.time()
-
-        result = model.transcribe(audio_path, fp16=False)
-
-        with open(txt_path, "w", encoding="utf-8") as f:
-            f.write(result["text"])
-
-        elapsed = time.time() - start
-        print(f"✅ STT 완료: {txt_filename} (⏱ {elapsed:.2f}초)")
-
-        # STT 완료 후 원본 오디오 파일 삭제
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
-            print(f"🗑️ 원본 오디오 삭제 완료: {file}")
-
-    total = time.time() - start_all
-    print(f"\n🔥 전체 STT 완료! 총 소요 시간: {total:.2f}초")
-
-
-# =========================
-# 5. 전처리
-# =========================
-def clean_text(text):
-    text = re.sub(r"\b(할렐루야|아멘|맞죠|그러니까요|뭐예요|그렇죠|여러분)\b", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    text = re.sub(r"([.!?])", r"\1\n", text)
-    text = re.sub(r"\n\s+", "\n", text)
-    return text
-
-
-def clean_transcripts():
-    print("\n✨ 전처리 시작...")
-
-    cleaned_count = 0
-
-    for file in os.listdir(transcript_folder):
-        if not file.lower().endswith(".txt"):
-            continue
-
-        input_path = os.path.join(transcript_folder, file)
-        output_path = os.path.join(clean_folder, file)
-
-        if os.path.exists(output_path):
-            continue
-
-        with open(input_path, "r", encoding="utf-8") as f:
-            raw_text = f.read()
-
-        cleaned = clean_text(raw_text)
-
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(cleaned)
-
-        cleaned_count += 1
-        print(f"✅ 전처리 완료: {file}")
-
-    if cleaned_count == 0:
-        print("✅ 새로 전처리할 파일이 없습니다.")
-    else:
-        print(f"🎉 전처리 완료 파일 수: {cleaned_count}개")
+    text = clean(vtt_to_text(vtt_path))
+    out_path = os.path.join(clean_folder, stem + ".txt")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.remove(vtt_path)
+    return True
 
 
 # =========================
 # 전체 실행
 # =========================
 if __name__ == "__main__":
-    print("🌐 유튜브 영상 URL 추출 시작...")
-    extract_youtube_urls()
+    videos = list_unprocessed_videos()
 
-    print("\n📥 m4a 오디오 다운로드 시작...")
-    download_audio_m4a()
+    ok = 0
+    for idx, (stem, vid) in enumerate(videos, 1):
+        print(f"[{idx}/{len(videos)}] 📝 자막 수집: {stem[:45]}")
+        if fetch_subtitle(stem, vid):
+            ok += 1
 
-    print("\n🔍 새 STT 대상 파일 탐색 중...")
-    new_files = get_unprocessed_audio_files()
-    transcribe_files(new_files)
-
-    clean_transcripts()
-
-    print("\n🎉 전체 작업 완료!")
+    print(f"\n🎉 자막 수집 완료: {ok}/{len(videos)}개 → {clean_folder}/")
+    print("다음 단계: python correct_transcripts.py  →  python generate_embeddings.py")

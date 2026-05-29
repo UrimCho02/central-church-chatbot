@@ -1,3 +1,35 @@
+# 작업 핸드오프 — 2026-05-29 (회사 PC 퇴근 시점)
+
+## 진행 중: Next.js + Supabase(pgvector) 스택 마이그레이션
+Python+FAISS+Streamlit → Next.js+Supabase 로 이전 중. **DB + 데이터 입력 파이프라인부터** 손대는 단계.
+
+### 오늘 완료
+1. **Supabase SQL 마이그레이션** — `supabase/migrations/0001_sermon_chunks.sql`
+   - pgvector 확장, `sermon_chunks` 테이블(id, video_id, sermon_date, content, `embedding vector(1536)`, created_at)
+   - 코사인 IVFFlat 인덱스 + `match_sermons(query_embedding, match_count, match_threshold)` RPC
+   - ⚠️ **아직 Supabase에 적용 안 됨** — 집에서 Supabase 프로젝트 SQL Editor에 이 파일 실행부터 해야 함.
+2. **`generate_embeddings.py`** — FAISS/numpy 제거, `supabase-py`로 `sermon_chunks`에 insert로 리팩토링.
+   - 임베딩 100개씩 배치, Supabase 200행씩 배치 insert. 모델 `text-embedding-3-small`(1536).
+   - `video_id`=전사본 파일명 stem(실제 YouTube id 매핑 없어 임시), `sermon_date`=파일명 `20\d{6}` 추출.
+3. **자막 파이프라인 채택** — Whisper STT → YouTube 자동자막 fetch 로 교체.
+   - A/B 검증(십일조 설교, raw ASR 비교): 자막이 Whisper보다 **어휘 정확도 우위**(Whisper `만군의 여호와→방군의 여우와` 깨짐, 자막은 정확). 단 `십일조→11조`는 둘 다 틀림 → **`correct_transcripts.py` LLM 교정 패스는 계속 필요**. 이득은 영상당 수 분→1초 미만 + 오디오 다운로드/Whisper 제거.
+   - `update_transcribe_and_clean.py` 전면 교체: `list_unprocessed_videos`→`fetch_subtitle`(yt-dlp `--write-auto-subs --sub-langs ko --skip-download`)→`vtt_to_text`→`clean`→`clean_transcripts/`.
+   - `vtt_to_text.py` 신규(타임스탬프·태그·롤링중복 제거, cue별 줄 유지 → `batches()` 5개 ~3000자 분할 검증 완료).
+   - 적용한 교훈: `:`→`_` 파일명 정규화(중복 수집 방지), `youtube:lang=ko`+`Accept-Language`(제목 영어 번역 방지), 자식 프로세스 `PYTHONUTF8=1`(cp949 깨짐 방지).
+4. `requirements-pipeline.txt`에 `supabase==2.11.0` 추가. `.gitignore`에 `subs_tmp/`, `channel_list.txt`.
+
+### 다음 작업 (집에서)
+- **B. `rag.py` FAISS → `match_sermons` RPC 전환** (예정, 미착수)
+  - 시작 시 `faiss.read_index`/`np.load` 제거 → 질문 임베딩 후 `supabase.rpc("match_sermons", {query_embedding, match_count})` → 반환 `content` 리스트를 컨텍스트로. `api.py`는 그대로.
+- B 끝난 뒤 **의존성 정리 한 번에**: `openai-whisper`(미사용), `faiss-cpu`(rag.py가 아직 사용 중이라 B 전엔 제거 금지) 제거.
+- 이후 Next.js 프론트 마이그레이션.
+
+### 환경 추가 (중요)
+- 새 `.env` 변수 필요: **`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`** (service_role은 서버 전용, 클라이언트 노출 금지). 집 PC `.env`에 추가.
+- 순서: ① Supabase에 0001 SQL 실행 → ② `.env`에 Supabase 키 → ③ `pip install -r requirements-pipeline.txt`(supabase) → ④ `generate_embeddings.py` 실행.
+
+---
+
 # 작업 핸드오프 — 2026-05-25 (집 PC 퇴근 시점)
 
 ## 오늘 완료한 것

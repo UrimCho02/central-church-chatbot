@@ -1,85 +1,94 @@
 import os
 import re
 import sys
-from openai import OpenAI
-import faiss
-import numpy as np
-from dotenv import load_dotenv
 from datetime import datetime
-import json
+
+from dotenv import load_dotenv
+from openai import OpenAI
+from supabase import create_client
 
 sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔 출력 깨짐/크래시 방지
 
-# 📌 1. API 키 로드
+# 📌 1. 환경변수 로드 (OpenAI + Supabase)
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 📌 2. 폴더 경로
-input_folder = "corrected_transcripts"  # LLM 교정본 사용
-embedding_model = "text-embedding-3-small"  # 또는 text-embedding-ada-002
+# Supabase: service_role 키 사용 (서버 사이드 insert, RLS 우회 목적)
+supabase = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+)
 
-# 📌 3. 텍스트 임베딩 함수
-def get_embedding(text):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text
-    )
-    return response.data[0].embedding
+# 📌 2. 설정
+input_folder = "corrected_transcripts"        # LLM 교정본 사용
+embedding_model = "text-embedding-3-small"     # 1536 차원
+TABLE_NAME = "sermon_chunks"
+CHUNK_SIZE = 1000                              # 청크 글자 수
+EMBED_BATCH = 100                              # OpenAI 임베딩 1회 요청당 청크 수
+INSERT_BATCH = 200                             # Supabase insert 1회당 행 수
 
-# 📌 4. 날짜 기반 정렬 함수
-def extract_date(filename):
+
+# 📌 3. 임베딩 함수 (배치 처리)
+def get_embeddings(batch_texts: list[str]) -> list[list[float]]:
+    response = client.embeddings.create(model=embedding_model, input=batch_texts)
+    return [item.embedding for item in response.data]
+
+
+# 📌 4. 파일명에서 설교 날짜(YYYYMMDD) 추출 → ISO 문자열
+def extract_date(filename: str) -> str | None:
     match = re.search(r"20\d{6}", filename)
     if match:
-        return datetime.strptime(match.group(), "%Y%m%d")
-    return datetime.min  # 날짜가 없으면 가장 오래된 것으로 처리
-
-# 📌 5. 전체 설교 선택 (3년 필터 미적용 — 비교 테스트 결과 B안 채택)
-# 오래된 설교에만 있는 주제(십일조 등)의 누락을 막기 위해 전체를 임베딩한다.
-all_files = [f for f in os.listdir(input_folder) if f.endswith(".txt")]
-selected_files = sorted(all_files, key=extract_date, reverse=True)
-version = f"{len(selected_files)}_{extract_date(selected_files[-1]).strftime('%Y%m%d')}"
+        return datetime.strptime(match.group(), "%Y%m%d").date().isoformat()
+    return None
 
 
-# 📌 6. 텍스트 로딩 + 나누기
-documents = []
-texts = []
+# 📌 5. 전체 설교 선택 (3년 필터 미적용 — B안 채택)
+all_files = sorted(f for f in os.listdir(input_folder) if f.endswith(".txt"))
+print(f"전체 설교 {len(all_files)}개 임베딩 시작 (필터 미적용)")
 
-for file in selected_files:
+# 📌 6. 텍스트 로딩 + 1000자 청킹
+#    각 청크에 출처(video_id = 파일명 stem)와 설교 날짜를 함께 보관한다.
+chunks: list[dict] = []
+for file in all_files:
+    video_id = os.path.splitext(file)[0]
+    sermon_date = extract_date(file)
     with open(os.path.join(input_folder, file), "r", encoding="utf-8") as f:
         content = f.read()
-        documents.append((file, content))
+    for i in range(0, len(content), CHUNK_SIZE):
+        chunks.append(
+            {
+                "video_id": video_id,
+                "sermon_date": sermon_date,
+                "content": content[i:i + CHUNK_SIZE],
+            }
+        )
 
-        # 긴 텍스트는 나누어서 처리
-        chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
-        for chunk in chunks:
-            texts.append((file, chunk))
+print(f"총 {len(chunks)}개 청크 생성 — 임베딩 + Supabase 적재 시작")
 
-# 📌 7. 임베딩 추출
-embeddings = []
-metadata = []
+# 📌 7. 임베딩 생성 후 Supabase 에 적재
+rows: list[dict] = []
+inserted = 0
 
-for idx, (filename, chunk) in enumerate(texts):
-    print(f"[{idx+1}/{len(texts)}] {filename} 임베딩 중...")
-    embedding = get_embedding(chunk)
-    embeddings.append(embedding)
-    metadata.append((filename, chunk))
+for start in range(0, len(chunks), EMBED_BATCH):
+    batch = chunks[start:start + EMBED_BATCH]
+    embeddings = get_embeddings([c["content"] for c in batch])
 
-# 📌 8. FAISS index 생성
-dimension = len(embeddings[0])
-index = faiss.IndexFlatL2(dimension)
-index.add(np.array(embeddings).astype("float32"))
+    for chunk, embedding in zip(batch, embeddings):
+        rows.append({**chunk, "embedding": embedding})
 
-# 📌 9. 저장 (app.py 가 embeddings/ 에서 읽으므로 경로 통일)
-os.makedirs("embeddings", exist_ok=True)
-faiss.write_index(index, "embeddings/sermon_index.faiss")
-np.save("embeddings/sermon_metadata.npy", np.array(metadata, dtype=object))
+    print(f"[임베딩] {min(start + EMBED_BATCH, len(chunks))}/{len(chunks)}")
 
-# 버전명 저장 (app.py에서 불러올 수 있도록)
-version_info = {
-    "embedding_version": version
-}
-with open("version_info.json", "w") as f:
-    json.dump(version_info, f)
+    # 버퍼가 INSERT_BATCH 이상 쌓이면 Supabase 에 적재
+    while len(rows) >= INSERT_BATCH:
+        supabase.table(TABLE_NAME).insert(rows[:INSERT_BATCH]).execute()
+        inserted += INSERT_BATCH
+        del rows[:INSERT_BATCH]
+        print(f"[적재] {inserted}개 행 insert 완료")
 
-print(f"[OK] 버전 정보 저장 완료: version_{version}")
-print(f"[OK] 전체 설교 {len(selected_files)}개 / 청크 {len(texts)}개 임베딩 완료")
+# 남은 행 적재
+if rows:
+    supabase.table(TABLE_NAME).insert(rows).execute()
+    inserted += len(rows)
+    print(f"[적재] {inserted}개 행 insert 완료")
+
+print(f"[OK] 설교 {len(all_files)}개 / 청크 {inserted}개 Supabase 적재 완료")

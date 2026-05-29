@@ -22,7 +22,9 @@ urls_to_download.txt
 # === 임시 작업 폴더 / 파일 ===
 auto_subs_raw/
 test_subs/
+subs_tmp/
 missing_urls.txt
+channel_list.txt
 
 # === Python ===
 __pycache__/
