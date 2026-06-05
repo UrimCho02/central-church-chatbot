@@ -1,16 +1,17 @@
 import os
 
-import faiss
-import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
+from supabase import create_client
 
 load_dotenv()
 
 _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-_index = faiss.read_index("embeddings/sermon_index.faiss")
-_metadata = np.load("embeddings/sermon_metadata.npy", allow_pickle=True)
+_supabase = create_client(
+    os.environ["SUPABASE_URL"],
+    os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+)
 
 
 def search_similar_docs(query: str, top_k: int = 5) -> list[str]:
@@ -18,9 +19,12 @@ def search_similar_docs(query: str, top_k: int = 5) -> list[str]:
         input=query,
         model="text-embedding-3-small",
     )
-    query_vec = np.array(response.data[0].embedding, dtype="float32")
-    _, indices = _index.search(np.array([query_vec]), top_k)
-    return [_metadata[i][1] for i in indices[0]]
+    query_vec = response.data[0].embedding
+    result = _supabase.rpc(
+        "match_sermons",
+        {"query_embedding": query_vec, "match_count": top_k},
+    ).execute()
+    return [row["content"] for row in result.data]
 
 
 def generate_prompt(contexts: list[str], user_question: str) -> str:
