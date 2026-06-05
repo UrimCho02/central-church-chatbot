@@ -1,0 +1,28 @@
+-- =============================================================
+-- 0002_drop_ivfflat_index.sql
+-- IVFFlat 벡터 인덱스 제거 (recall 저하 + 과대 설정 해결)
+-- =============================================================
+-- 배경:
+--   0001 에서 IVFFlat 인덱스(lists=100)를 *빈 테이블* 상태로 생성했다.
+--   IVFFlat 은 인덱스 생성 시점의 데이터로 클러스터 중심(centroid)을
+--   학습하는데, 빈 테이블이라 중심이 엉터리로 잡혀 적재 후 list 배분이
+--   고르지 않게 되었다. 그 결과 일부 질문이 작은 list 에 떨어져
+--   가까운 청크인데도 누락되는 recall 저하가 발생했다.
+--   (재현: top_k=5 요청에 어떤 질문은 3개만 반환)
+--   또한 lists=100 은 현재 규모(약 4,348청크)에 과대 설정이다
+--   (권장 ≈ 행수/1000).
+--
+-- 결정:
+--   이 규모에서는 인덱스 없는 정확 검색(seq scan)이 수십 ms 내로
+--   충분히 빠르고 recall 100% 이다. IVFFlat 인덱스를 제거한다.
+--   match_sermons RPC 는 ORDER BY embedding <=> query 로 그대로 동작한다.
+--
+-- 향후:
+--   코퍼스가 크게 늘면(수십만 청크+) IVFFlat 대신 HNSW 권장:
+--     create index sermon_chunks_embedding_idx
+--       on public.sermon_chunks using hnsw (embedding vector_cosine_ops);
+--   (HNSW 는 사전 학습 불필요 → 빈 테이블 생성 문제 없음. 데이터 적재
+--    후 생성하면 가장 안전.)
+-- =============================================================
+
+drop index if exists public.sermon_chunks_embedding_idx;
