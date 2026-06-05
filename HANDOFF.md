@@ -1,6 +1,28 @@
-# 작업 핸드오프 — 2026-05-29 (회사 PC 퇴근 시점)
+# 작업 핸드오프 — 2026-06-05 (회사 PC)
 
 ## 진행 중: Next.js + Supabase(pgvector) 스택 마이그레이션
+Python+FAISS+Streamlit → Next.js+Supabase 로 이전 중.
+
+### 오늘 완료 — 2단계 B: `rag.py` FAISS → `match_sermons` RPC (브랜치 `rag-supabase-rpc`, 커밋 `728bd07`, **아직 push 안 함**)
+- `rag.py` `search_similar_docs`: `faiss.read_index`/`np.load` 제거 → `supabase.rpc("match_sermons", {query_embedding, match_count})`. 반환 `data`에서 `content` 추출. 모듈 로딩부에서 `create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`.
+- `requirements.txt`: `supabase==2.11.0` 런타임 승격, `faiss-cpu` 제거. pipeline의 중복 supabase 항목 정리.
+- `app.py`/`api.py` 둘 다 `from rag import answer_question`만 쓰므로 검색 함수 한 곳 교체로 충분.
+- RPC 시그니처 확인됨: `match_sermons(query_embedding vector(1536), match_count int=5, match_threshold float=0.0)` → returns id, video_id, sermon_date, content, similarity.
+
+### 다음 작업 (순서)
+1. **로컬 테스트** — 이 PC `.env`에 `SUPABASE_URL`+`SUPABASE_SERVICE_ROLE_KEY` 추가 → `pip install -r requirements.txt` → 실제 질문으로 RPC 검색 확인. (집 PC에서 Supabase 세팅+데이터 적재는 완료된 것으로 보임 — DB는 클라우드 공유)
+2. **Render env var 추가** — 대시보드에 `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` 등록. ⚠️ 이거 없이 `rag-supabase-rpc`를 main에 머지/push하면 import 단계 `KeyError`로 라이브 백엔드 다운.
+3. **main 머지 + push** → Render 자동 재배포 → 라이브 전환.
+4. 이후 Next.js 프론트 마이그레이션.
+
+### 참고: 이전 단계(2단계 A, 커밋 `2a84571`, main에 있음)
+Supabase `0001_sermon_chunks.sql`, `generate_embeddings.py`(supabase-py insert), 자막 파이프라인(`vtt_to_text.py` 등). 상세는 아래 2026-05-29 섹션 참조.
+
+---
+
+# 작업 핸드오프 — 2026-05-29 (회사 PC 퇴근 시점)
+
+## 진행 중: Next.js + Supabase(pgvector) 스택 마이그레이션 (2단계 A)
 Python+FAISS+Streamlit → Next.js+Supabase 로 이전 중. **DB + 데이터 입력 파이프라인부터** 손대는 단계.
 
 ### 오늘 완료

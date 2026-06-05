@@ -23,5 +23,5 @@
 openai-whisper==20240930
 yt-dlp==2025.1.26
 
-# --- 임베딩 적재 (Supabase / pgvector) ---
-supabase==2.11.0
+# 참고: 임베딩 적재(Supabase/pgvector)에 쓰는 `supabase` 패키지는
+#       이제 런타임 의존이라 베이스 `requirements.txt` 에 있습니다.
