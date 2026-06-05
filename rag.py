@@ -65,22 +65,7 @@ def get_gpt_response(prompt: str) -> str:
     return response.choices[0].message.content
 
 
-def polish_text(text: str) -> str:
-    system_prompt = "너는 신중하고 부드러운 한국어 에디터야. 문장을 자연스럽게 다듬고 어색한 부분은 고쳐줘. 의미는 바꾸지 마."
-    user_prompt = f"다음 텍스트를 더 자연스럽고 매끄럽게 정리해줘:\n\n{text}"
-
-    response = _client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-    )
-    return response.choices[0].message.content.strip()
-
-
 def answer_question(question: str) -> str:
     docs = search_similar_docs(question)
     prompt = generate_prompt(docs, question)
-    raw_answer = get_gpt_response(prompt)
-    return polish_text(raw_answer)
+    return get_gpt_response(prompt)
