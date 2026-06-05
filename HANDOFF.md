@@ -1,22 +1,56 @@
-# 작업 핸드오프 — 2026-06-05 (회사 PC)
+# 작업 핸드오프 — 2026-06-05 (퇴근 시점) ⭐ 최신
 
-## 진행 중: Next.js + Supabase(pgvector) 스택 마이그레이션
-Python+FAISS+Streamlit → Next.js+Supabase 로 이전 중.
+## 한 줄 요약
+백엔드를 **Render(Python) → Vercel 서버리스 함수(TypeScript)** 로 옮기는 작업까지 끝냈고,
+**프리뷰에서 검증 완료**. 남은 건 **목사님 검수 → main 머지(라이브) → Render 삭제** 뿐.
 
-### 오늘 완료 — 2단계 B: `rag.py` FAISS → `match_sermons` RPC (브랜치 `rag-supabase-rpc`, 커밋 `728bd07`, **아직 push 안 함**)
-- `rag.py` `search_similar_docs`: `faiss.read_index`/`np.load` 제거 → `supabase.rpc("match_sermons", {query_embedding, match_count})`. 반환 `data`에서 `content` 추출. 모듈 로딩부에서 `create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)`.
-- `requirements.txt`: `supabase==2.11.0` 런타임 승격, `faiss-cpu` 제거. pipeline의 중복 supabase 항목 정리.
-- `app.py`/`api.py` 둘 다 `from rag import answer_question`만 쓰므로 검색 함수 한 곳 교체로 충분.
-- RPC 시그니처 확인됨: `match_sermons(query_embedding vector(1536), match_count int=5, match_threshold float=0.0)` → returns id, video_id, sermon_date, content, similarity.
+## 두 레포 현재 상태 (모두 push 완료 — 어느 PC서든 pull 가능)
+| 레포 | 브랜치 | 최신 커밋 | 상태 |
+|---|---|---|---|
+| `christian-chatbot` (백엔드) | `main` | `eb62918` | Supabase RPC + polish 제거 + repo 정리. Render에 라이브. |
+| `central-church-website` (프론트) | `chat-widget-wip` | `ddc05fd` | 위젯 + `api/ask.ts`(Vercel 함수). 프리뷰 검증됨. **main 미머지.** |
 
-### 다음 작업 (순서)
-1. **로컬 테스트** — 이 PC `.env`에 `SUPABASE_URL`+`SUPABASE_SERVICE_ROLE_KEY` 추가 → `pip install -r requirements.txt` → 실제 질문으로 RPC 검색 확인. (집 PC에서 Supabase 세팅+데이터 적재는 완료된 것으로 보임 — DB는 클라우드 공유)
-2. **Render env var 추가** — 대시보드에 `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` 등록. ⚠️ 이거 없이 `rag-supabase-rpc`를 main에 머지/push하면 import 단계 `KeyError`로 라이브 백엔드 다운.
-3. **main 머지 + push** → Render 자동 재배포 → 라이브 전환.
-4. 이후 Next.js 프론트 마이그레이션.
+## 오늘(2026-06-05) 한 일 — 시간순
+1. **christian-chatbot 마이그레이션 2단계 B** (main): `rag.py` FAISS→`match_sermons` RPC, supabase 런타임 승격/faiss-cpu 제거.
+2. **데이터 적재**: 집에선 스키마만 만들어졌고 테이블이 비어 있었음 → `generate_embeddings.py` 실행 → **262설교/4,348청크** 적재.
+3. **IVFFlat 버그 수정** (`0002` 마이그레이션, SQL Editor에서 실행): 빈 테이블에 만든 인덱스가 recall 깨뜨림 → 인덱스 drop. (교훈: 인덱스는 데이터 적재 후 생성)
+4. **라이브 전환**: main 머지+push → Render에 SUPABASE env 등록 → 배포 검증.
+5. **repo 정리**: 런타임 미사용 FAISS 파일 + 일회성 compare 스크립트 제거.
+6. **비용·속도 최적화**: A/B 비교 후 polish 단계 제거 (응답당 GPT-4o 2→1, 비용·시간 ~절반).
+7. **Render 탈출 — Vercel 서버리스 함수** (central-church-website `chat-widget-wip`):
+   - `api/ask.ts`: rag.py 로직 TS 포팅(임베딩→Supabase `match_sermons` RPC→GPT-4o, 프롬프트 동일, maxDuration 30s, 클라이언트 지연생성+env 검증).
+   - 위젯: Render URL → 동일 출처 `/api/ask` (CORS 제거). 콜드스타트 문구 변경.
+   - deps: openai, @supabase/supabase-js (+dev @vercel/node).
+   - **프리뷰 검증 완료**: `/api/ask` HTTP 200 + 브라우저 위젯 정상.
 
-### 참고: 이전 단계(2단계 A, 커밋 `2a84571`, main에 있음)
-Supabase `0001_sermon_chunks.sql`, `generate_embeddings.py`(supabase-py insert), 자막 파이프라인(`vtt_to_text.py` 등). 상세는 아래 2026-05-29 섹션 참조.
+## ▶️ 다음에 이어서 할 일 (순서)
+1. **목사님 검수** — 프리뷰 URL 전달 (보호 꺼둬서 로그인 불필요):
+   `https://central-church-website-git-chat-widget-wip-urimcho02s-projects.vercel.app`
+2. 피드백 반영 (필요시 톤·길이 — `christian-chatbot/rag.py` generate_prompt 또는 `central-church-website/api/ask.ts` 동일 프롬프트 **양쪽 다** 수정해야 일관).
+3. **`chat-widget-wip` → main 머지 + push** = centralchurch.kr 본 사이트에 챗봇 라이브.
+   - ⚠️ 머지 전 Vercel env 3개가 **Production 스코프**에도 있는지 확인 (없으면 위젯은 뜨지만 /api/ask 500).
+4. **Render 서비스 삭제** — 머지 후 아무도 안 씀 (위젯은 /api/ask 사용, 남은 건 옛 `/demo`뿐). 콜드스타트 완전 작별.
+5. **정리**: `chat-widget-wip`의 trigger-rebuild 빈 커밋들 정돈, Render `/demo` 잔재.
+
+## ⚙️ 다른 PC에서 이어가려면 (중요 — `.env`는 git 추적 안 됨)
+1. 두 레포 최신화:
+   - `christian-chatbot`: `git pull` (main)
+   - `central-church-website`: `git fetch && git checkout chat-widget-wip && git pull`
+2. **`.env` 파일을 PC마다 직접 생성** (git에 없음). 필요한 키:
+   - `christian-chatbot/.env`: `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+   - `central-church-website/.env`: 위 3개 + `VITE_YOUTUBE_API_KEY` (`.env.example` 참고)
+3. 의존성: `christian-chatbot`은 `pip install -r requirements.txt`, `central-church-website`는 `npm install`.
+4. 클라우드(Supabase 데이터, Render, Vercel)는 공유 상태라 PC 무관.
+
+## 현재 안전 상태
+- **본 사이트(centralchurch.kr)**: 챗봇 아직 안 뜸 (main 미머지) ✅
+- **Render 백엔드**: 살아있음 (삭제 금지 — 머지·검증 후). 현재 유일 용도 = 옛 `/demo`.
+- **Vercel 프리뷰 보호**: 꺼둠 (검수용). 검수 후 다시 켜도 됨.
+
+---
+
+# 작업 핸드오프 — 2026-06-05 (회사 PC, 오전) — 기록 보존
+2단계 B 상세는 위 최신 섹션에 통합됨. (이전 메모: `rag-supabase-rpc` 브랜치 작업 → 이후 main 머지 `aec0481`.)
 
 ---
 
