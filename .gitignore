@@ -25,6 +25,7 @@ test_subs/
 subs_tmp/
 missing_urls.txt
 channel_list.txt
+_embeddings_cache.pkl
 
 # === Python ===
 __pycache__/
