@@ -69,3 +69,14 @@ def answer_question(question: str) -> str:
     docs = search_similar_docs(question)
     prompt = generate_prompt(docs, question)
     return get_gpt_response(prompt)
+
+
+def log_qa(question: str, answer: str) -> None:
+    """사용자 질문/답변을 chat_logs 에 best-effort 기록.
+    로깅 실패가 사용자 응답을 막지 않도록 예외는 삼킨다."""
+    try:
+        _supabase.table("chat_logs").insert(
+            {"question": question, "answer": answer}
+        ).execute()
+    except Exception as e:
+        print(f"[chat_logs] 기록 실패(무시): {e}")

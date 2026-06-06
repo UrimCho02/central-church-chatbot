@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from rag import answer_question
+from rag import answer_question, log_qa
 
 app = FastAPI(title="Central Church Counseling API")
 
@@ -43,4 +43,6 @@ def demo() -> FileResponse:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest) -> AskResponse:
-    return AskResponse(answer=answer_question(req.question))
+    answer = answer_question(req.question)
+    log_qa(req.question, answer)  # 질문/답변 누적 (best-effort)
+    return AskResponse(answer=answer)
