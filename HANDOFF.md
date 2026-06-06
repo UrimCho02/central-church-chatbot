@@ -1,4 +1,59 @@
-# 작업 핸드오프 — 2026-06-05 (퇴근 시점) ⭐ 최신
+# 작업 핸드오프 — 2026-06-07 ⭐ 최신
+
+## 한 줄 요약
+검색 품질(청킹) 대폭 개선 + 질문/답변 누적 로깅(양쪽 백엔드) + 모바일 전송버튼 오터치 수정 완료.
+**목사님 검수 준비 끝.** 남은 건 검수 → 피드백 반영 → `chat-widget-wip` main 머지(라이브) → Render 삭제.
+
+## 두 레포 현재 상태 (모두 push 완료)
+| 레포 | 브랜치 | 최신 커밋 | 상태 |
+|---|---|---|---|
+| central-church-chatbot (백엔드) | `main` | `d5de6ac` | 청킹 재설계 + chat_logs 로깅. Render 라이브. |
+| central-church-website (프론트) | `chat-widget-wip` | `1e19067` | Vercel `api/ask.ts` 로깅 + 모바일 전송버튼 수정. **main 미머지.** |
+
+## 오늘(2026-06-06~07) 한 일
+
+### 1. 검색 품질 — 청킹 재설계 (핵심)
+- **증상:** "헌금/구원/기도" 같은 주제형 질문이 목사님의 해당 주제 전용 설교를 못 끌어오고 일반론으로 답함.
+- **진단**(`debug_rag.py`로 매칭 청크+유사도 측정): 전사 오류(십일조→"11조")는 `corrected_transcripts/` 교정본으로 이미 해결됐으나, **1000자 하드컷 청킹**이 핵심 대목을 잘라/묻어 전용 설교가 top_k 밖으로 밀림. (예: 헌금 질문에 「온전한 십일조」가 6위 → top_k=5에 잘림)
+- **조치:** `generate_embeddings.py`를 **문장경계 청킹(target 500자 + overlap 120자)**로 재설계, Supabase 재적재(4,348 → **12,562청크**). 재적재 안전장치: 임베딩 디스크 캐시(`_embeddings_cache.pkl`, gitignore) + 배치 삭제(전체 delete 시 statement timeout 회피) + TPM 백오프.
+- **결과**(`chunking_eval_20260606.md`): 헌금→「온전한 십일조」 6위→1위, 구원→「피를 볼 때에」(유월절) 1위 등 전 질문 유사도 상승. Supabase 공유라 Render·Vercel 즉시 반영.
+
+### 2. 질문/답변 누적 로깅 (chat_logs)
+- `0003_chat_logs.sql`: `chat_logs` 테이블 + RLS(서버 전용, 공개 접근 차단). **Supabase SQL Editor에서 실행 완료(검증함).**
+- 백엔드: `rag.py` `log_qa()`(best-effort) + `api.py` `/ask`에서 호출.
+- 프론트: Vercel `api/ask.ts` 응답 후 best-effort insert(실 홈페이지 경로). **양쪽 검증 완료.**
+- 조회: Supabase 대시보드 **Table Editor → chat_logs** (RLS로 공개 API엔 안 보임 = 프라이버시).
+
+### 3. 모바일 전송버튼 오터치 수정 (`src/App.jsx`)
+- 입력창-버튼 간격 `gap-2`→`gap-3`, 모바일(`pointer: coarse`)에선 Enter=줄바꿈(전송은 버튼만). 데스크탑 Enter=전송 유지.
+- ⚠️ 터치 동작이라 코드 검증 불가 — **휴대폰에서 직접 재확인 필요.**
+
+## ▶️ 다음 작업 (순서)
+1. **모바일 전송버튼 휴대폰 재확인** (오터치 사라졌는지)
+2. **목사님 검수** — 프리뷰 URL(보호 꺼둠, 로그인 불필요):
+   `https://central-church-website-git-chat-widget-wip-urimcho02s-projects.vercel.app`
+   - off-topic(비트코인류)에 신앙관점으로 답하는 경향 → 목사님 의견 받기(거절형 원하면 `match_threshold` 추가)
+   - 검수 중 질문은 chat_logs에 자동 누적됨
+3. 피드백 반영 (톤/길이는 `rag.py` generate_prompt + `api/ask.ts` 프롬프트 **양쪽 동일하게** 수정)
+4. **공개 런칭 전**: 위젯 disclaimer에 "질문이 저장될 수 있습니다" 한 줄
+5. `chat-widget-wip` → main 머지 + push = centralchurch.kr 라이브 (Vercel env 3개 Production 스코프 확인) → Render 삭제
+
+## 추가 개선 여지 (검수 후)
+- off-topic 거절형(`match_threshold`) — 단 주제형도 유사도 0.33~0.54라 보정 주의(정상 주제까지 막힐 위험)
+- 청크별 요약/HyDE 임베딩으로 주제 매칭 강화, top_k 튜닝
+- `debug_rag.py "질문" [N]` 으로 변경 후 회귀 측정
+
+## ⚙️ 다른 PC에서 이어가려면
+- ⚠️ **시작 시 두 레포 다 `git fetch` 먼저** — 회사/집 PC가 자주 앞서감(이번 세션에도 양쪽 다 behind였음).
+  - central-church-chatbot: `git pull` (main)
+  - central-church-website: `git fetch && git checkout chat-widget-wip && git pull`
+- `.env`는 PC마다 직접 생성(git 추적 X): chatbot = `OPENAI_API_KEY`+`SUPABASE_URL`+`SUPABASE_SERVICE_ROLE_KEY` / website = 위 3개+`VITE_YOUTUBE_API_KEY`
+- 의존성: chatbot `pip install -r requirements.txt`(supabase 포함), website `npm install`
+- 클라우드(Supabase 데이터·로그, Render, Vercel)는 공유라 PC 무관.
+
+---
+
+# 작업 핸드오프 — 2026-06-05 (퇴근 시점)
 
 ## 한 줄 요약
 백엔드를 **Render(Python) → Vercel 서버리스 함수(TypeScript)** 로 옮기는 작업까지 끝냈고,
