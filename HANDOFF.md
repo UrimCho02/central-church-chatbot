@@ -8,7 +8,7 @@
 | 레포 | 브랜치 | 최신 커밋 | 상태 |
 |---|---|---|---|
 | central-church-chatbot (백엔드) | `main` | `d5de6ac` | 청킹 재설계 + chat_logs 로깅. Render 라이브. |
-| central-church-website (프론트) | `chat-widget-wip` | `1e19067` | Vercel `api/ask.ts` 로깅 + 모바일 전송버튼 수정. **main 미머지.** |
+| central-church-website (프론트) | `chat-widget-wip` | `6ae245c` | Vercel `api/ask.ts` 로깅 + 모바일 UX 수정(전송버튼·키보드). **main 미머지.** |
 
 ## 오늘(2026-06-06~07) 한 일
 
@@ -24,12 +24,13 @@
 - 프론트: Vercel `api/ask.ts` 응답 후 best-effort insert(실 홈페이지 경로). **양쪽 검증 완료.**
 - 조회: Supabase 대시보드 **Table Editor → chat_logs** (RLS로 공개 API엔 안 보임 = 프라이버시).
 
-### 3. 모바일 전송버튼 오터치 수정 (`src/App.jsx`)
-- 입력창-버튼 간격 `gap-2`→`gap-3`, 모바일(`pointer: coarse`)에선 Enter=줄바꿈(전송은 버튼만). 데스크탑 Enter=전송 유지.
-- ⚠️ 터치 동작이라 코드 검증 불가 — **휴대폰에서 직접 재확인 필요.**
+### 3. 모바일 UX 수정 (`src/App.jsx`) — 2건
+- **전송버튼 오터치**(`1e19067`): 입력창-버튼 간격 `gap-2`→`gap-3`, 모바일(`pointer: coarse`)에선 Enter=줄바꿈(전송은 버튼만). 데스크탑 Enter=전송 유지.
+- **키보드로 입력창/버튼이 화면 밖으로 밀림**(`6ae245c`): 패널 `fixed inset-0`→`top-0 h-[100dvh]` + `visualViewport`에 맞춰 높이·위치 보정(키보드만큼 패널이 줄어듦). 데스크탑 400×640 그대로.
+- ⚠️ 둘 다 터치/키보드 동작이라 코드 검증 불가 — **휴대폰(특히 iOS)에서 직접 재확인 필요.**
 
 ## ▶️ 다음 작업 (순서)
-1. **모바일 전송버튼 휴대폰 재확인** (오터치 사라졌는지)
+1. **모바일 휴대폰 재확인** (오터치로 조기 전송 안 되는지 + 키보드 올라올 때 입력창/전송버튼이 화면에 보이는지, 특히 iOS)
 2. **목사님 검수** — 프리뷰 URL(보호 꺼둠, 로그인 불필요):
    `https://central-church-website-git-chat-widget-wip-urimcho02s-projects.vercel.app`
    - off-topic(비트코인류)에 신앙관점으로 답하는 경향 → 목사님 의견 받기(거절형 원하면 `match_threshold` 추가)
