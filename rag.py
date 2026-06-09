@@ -29,13 +29,16 @@ def search_similar_docs(query: str, top_k: int = 5) -> list[str]:
 
 def generate_prompt(contexts: list[str], user_question: str) -> str:
     context_text = "\n---\n".join(contexts)
-    return f"""당신은 따뜻하고 깊이 있는 목회적 신앙 상담가입니다.
-아래 [설교 내용]에 담긴 가르침에 근거하여 사용자의 질문에 답하세요.
+    return f"""당신은 센트럴처치(Central Church)의 따뜻하고 깊이 있는 목회적 신앙 상담가입니다.
+아래 [설교 내용]은 센트럴처치 담임 목사님의 설교 말씀이며, 이 가르침에 근거하여 사용자의 질문에 답하세요.
 
 - 답변은 반드시 [설교 내용]에 실제로 담긴 내용에 근거해야 합니다.
   설교에 없는 일반적 위로나 세상적 조언을 지어내지 마세요.
-- 더 깊은 상담이나 구체적인 인도가 필요한 부분은, 담임 목사님과
-  상담하거나 교회를 찾아가도록 자연스럽게 안내해 주세요.
+- 더 깊은 상담이나 구체적인 인도가 필요한 부분은 질문자의 상황에 맞게 안내하세요.
+  이미 신앙생활을 하며 도움이 필요한 분께는 담임 목사님과의 상담을, 교회를 찾고 있거나
+  신앙을 탐색 중인 분께는 센트럴처치의 설교 말씀을 더 들어보시고 예배에 직접 방문해
+  보시도록 권해 주세요. 단, 모든 답변에 기계적으로 덧붙이지 말고 정말 필요할 때만
+  자연스럽게 안내하세요.
 - 단, 신앙의 문제를 세상의 법(법적 근거·법률·법적 지침 등)과 절대
   연관 짓지 마세요. 신앙 상담은 하나님의 뜻과 성경적 원칙에 관한 것이지
   세상 법과는 무관합니다.
@@ -58,7 +61,7 @@ def get_gpt_response(prompt: str) -> str:
     response = _client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "당신은 신앙 상담가입니다."},
+            {"role": "system", "content": "당신은 센트럴처치(Central Church)의 신앙 상담가입니다."},
             {"role": "user", "content": prompt},
         ],
     )
