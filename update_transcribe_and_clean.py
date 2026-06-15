@@ -58,6 +58,12 @@ _COOKIE_ARGS = (
     ["--cookies", os.environ["YT_COOKIES"]] if os.environ.get("YT_COOKIES") else []
 )
 
+# YouTube 의 n-sig 챌린지를 풀려면 JS 런타임(deno) + 챌린지 solver 스크립트가
+# 모두 필요. solver 스크립트는 yt-dlp 가 기본적으로 다운로드를 막아두므로
+# 명시적으로 opt-in: --remote-components ejs:github (yt-dlp 권장 옵션).
+# 미적용 시 "Requested format is not available" 로 자막 fetch 가 실패.
+_EJS_ARGS = ["--remote-components", "ejs:github"]
+
 # 자막 텍스트에서 제거할 추임새/군더더기 (구 clean_text 와 동일)
 _FILLER = re.compile(r"(할렐루야|아멘|맞죠|그러니까요|뭐예요|그렇죠|여러분)")
 
@@ -100,7 +106,7 @@ def list_unprocessed_videos():
     }
 
     command = [
-        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS,
+        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS, *_EJS_ARGS,
         "--flat-playlist", "-i",
         "--print", "%(title)s|||%(id)s",
         channel_url,
@@ -131,7 +137,7 @@ def fetch_subtitle(stem, video_id):
     성공 여부를 반환한다."""
     out_tmpl = os.path.join(sub_tmp_folder, "%(id)s.%(ext)s")
     command = [
-        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS,
+        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS, *_EJS_ARGS,
         "--write-auto-subs",
         "--sub-langs", "ko",
         "--sub-format", "vtt",
