@@ -42,6 +42,14 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Setup Deno (yt-dlp JS runtime)
+        # YouTube 의 n-sig 챌린지 해독에 JS 런타임이 필요(yt-dlp 2025+ 요구사항).
+        # 미설치 시 "n challenge solving failed → Requested format is not available"
+        # 로 자막/비디오 fetch 가 모두 실패.
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install dependencies
         # whisper/torch 는 자막 파이프라인에선 불필요 → 베이스 + yt-dlp 만 설치.
         # yt-dlp 는 YouTube extractor 변경을 따라 자주 릴리스되므로 버전 고정하지 않는다.
