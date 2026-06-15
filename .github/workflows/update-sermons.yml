@@ -43,11 +43,13 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        # whisper/torch 는 자막 파이프라인에선 불필요 → 베이스 + yt-dlp 만 설치
+        # whisper/torch 는 자막 파이프라인에선 불필요 → 베이스 + yt-dlp 만 설치.
+        # yt-dlp 는 YouTube extractor 변경을 따라 자주 릴리스되므로 버전 고정하지 않는다
+        # (옛 버전은 채널 listing 이 통째로 빈 결과를 반환하는 사례가 있었다).
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install yt-dlp==2025.1.26
+          pip install --upgrade yt-dlp
 
       - name: Fetch new sermon subtitles
         run: python update_transcribe_and_clean.py
