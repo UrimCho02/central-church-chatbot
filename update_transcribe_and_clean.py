@@ -51,6 +51,13 @@ _LANG_ARGS = [
     "--add-header", "Accept-Language:ko-KR,ko;q=0.9",
 ]
 
+# YT_COOKIES 환경변수가 잡혀 있으면 yt-dlp 에 쿠키 파일 경로를 전달한다.
+# CI(Azure 데이터센터 IP)는 YouTube 봇 체크("로그인하여 봇이 아님을 확인하세요")
+# 를 받기 때문에 로그인된 세션 쿠키가 필요. 로컬에선 미설정이라 동작 변화 없음.
+_COOKIE_ARGS = (
+    ["--cookies", os.environ["YT_COOKIES"]] if os.environ.get("YT_COOKIES") else []
+)
+
 # 자막 텍스트에서 제거할 추임새/군더더기 (구 clean_text 와 동일)
 _FILLER = re.compile(r"(할렐루야|아멘|맞죠|그러니까요|뭐예요|그렇죠|여러분)")
 
@@ -93,7 +100,7 @@ def list_unprocessed_videos():
     }
 
     command = [
-        "yt-dlp", *_LANG_ARGS,
+        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS,
         "--flat-playlist", "-i",
         "--print", "%(title)s|||%(id)s",
         channel_url,
@@ -124,7 +131,7 @@ def fetch_subtitle(stem, video_id):
     성공 여부를 반환한다."""
     out_tmpl = os.path.join(sub_tmp_folder, "%(id)s.%(ext)s")
     command = [
-        "yt-dlp", *_LANG_ARGS,
+        "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS,
         "--write-auto-subs",
         "--sub-langs", "ko",
         "--sub-format", "vtt",
