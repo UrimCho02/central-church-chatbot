@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 import re
@@ -118,11 +119,18 @@ def chunk_text(
 
 # 📌 5. 전체 설교 → 청크 목록 생성
 #    각 청크에 출처(video_id = 파일명 stem)와 설교 날짜를 함께 보관한다.
-def build_chunks() -> list[dict]:
+#    skip_video_ids 가 주어지면 그 set 에 속한 설교는 건너뛴다(증분 모드).
+def build_chunks(skip_video_ids: set[str] | None = None) -> list[dict]:
     all_files = sorted(f for f in os.listdir(input_folder) if f.endswith(".txt"))
-    print(f"전체 설교 {len(all_files)}개 — 문장경계 청킹(target {CHUNK_TARGET}자, overlap {CHUNK_OVERLAP}자)")
+    skip = skip_video_ids or set()
+    target_files = [f for f in all_files if os.path.splitext(f)[0] not in skip]
+    skipped = len(all_files) - len(target_files)
+    print(
+        f"설교 파일 {len(all_files)}개 (이미 적재 {skipped} / 처리 대상 {len(target_files)}) — "
+        f"문장경계 청킹(target {CHUNK_TARGET}자, overlap {CHUNK_OVERLAP}자)"
+    )
     chunks: list[dict] = []
-    for file in all_files:
+    for file in target_files:
         video_id = os.path.splitext(file)[0]
         sermon_date = extract_date(file)
         with open(os.path.join(input_folder, file), "r", encoding="utf-8") as f:
@@ -134,6 +142,29 @@ def build_chunks() -> list[dict]:
                 {"video_id": video_id, "sermon_date": sermon_date, "content": piece}
             )
     return chunks
+
+
+# 📌 5-1. Supabase 에 이미 적재된 video_id 목록 (증분 모드용)
+#    page 단위로 가져와 distinct set 로 모은다(supabase-py 가 DISTINCT 직접 미지원).
+def fetch_existing_video_ids() -> set[str]:
+    seen: set[str] = set()
+    page_size = 1000
+    offset = 0
+    while True:
+        rows = (
+            supabase.table(TABLE_NAME)
+            .select("video_id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+        )
+        if not rows:
+            break
+        seen.update(r["video_id"] for r in rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return seen
 
 
 # 📌 6. 임베딩 (전부 메모리에 모은 뒤 적재 → 실패 시 기존 데이터 보존)
@@ -165,22 +196,44 @@ def clear_table() -> int:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="설교 텍스트 → Supabase 임베딩 적재. 기본은 증분(새 설교만), "
+        "--rebuild 시 기존 데이터 전체 삭제 후 재적재."
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="기존 sermon_chunks 전체 삭제 후 재임베딩/재적재 (청킹·임베딩 모델 교체 시).",
+    )
+    args = parser.parse_args()
+
+    if args.rebuild:
+        skip_ids: set[str] = set()
+        print("[모드] 전체 재적재 (--rebuild)")
+    else:
+        skip_ids = fetch_existing_video_ids()
+        print(f"[모드] 증분 — Supabase 에 이미 있는 video_id {len(skip_ids)}건 건너뜀")
+
     # 임베딩은 비싸므로 캐시 → 적재 실패 후 재실행 시 재임베딩 생략
     if os.path.exists(CACHE_FILE):
         print(f"[캐시] {CACHE_FILE} 에서 임베딩 로드 (재임베딩 생략)")
         with open(CACHE_FILE, "rb") as fh:
             rows = pickle.load(fh)
     else:
-        chunks = build_chunks()
+        chunks = build_chunks(skip_video_ids=skip_ids)
+        if not chunks:
+            print("[OK] 새로 적재할 설교 없음 — 종료")
+            return
         print(f"총 {len(chunks)}개 청크 생성 — 임베딩 시작")
         rows = embed_all(chunks)
         with open(CACHE_FILE, "wb") as fh:
             pickle.dump(rows, fh)
         print(f"[OK] 임베딩 {len(rows)}개 완료 → 캐시 저장")
 
-    # 기존 행 삭제(배치) 후 재적재
-    print("[삭제] 기존 행 제거 시작...")
-    clear_table()
+    # 전체 재적재 모드에서만 기존 행 삭제. 증분 모드는 append-only.
+    if args.rebuild:
+        print("[삭제] 기존 행 제거 시작...")
+        clear_table()
 
     inserted = 0
     for start in range(0, len(rows), INSERT_BATCH):
@@ -188,7 +241,7 @@ def main() -> None:
         inserted += len(rows[start:start + INSERT_BATCH])
         print(f"[적재] {inserted}/{len(rows)}개 행 insert 완료")
 
-    print(f"[OK] 청크 {inserted}개 Supabase 재적재 완료")
+    print(f"[OK] 청크 {inserted}개 Supabase 적재 완료")
     os.remove(CACHE_FILE)  # 성공 시 캐시 정리
     print(f"[정리] {CACHE_FILE} 삭제 완료")
 

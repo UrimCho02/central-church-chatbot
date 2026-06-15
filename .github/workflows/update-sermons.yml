@@ -1,0 +1,73 @@
+# 매주 월요일 자동 설교 업데이트 파이프라인.
+#
+# 흐름: yt-dlp 자막 fetch → LLM 교정 → Supabase 증분 임베딩.
+# 새 transcripts(clean_, corrected_)는 다음 회차 증분 판정 기준이 되므로
+# 마지막에 repo 로 commit/push 한다.
+#
+# 트리거:
+#   - 매주 월요일 03:30 UTC (= 12:30 KST, 설교 업로드는 월요일 오전)
+#   - 수동(workflow_dispatch): Actions 탭 → Run workflow
+name: Update Sermons
+
+on:
+  schedule:
+    - cron: "30 3 * * 1"
+  workflow_dispatch: {}
+
+# 동시에 두 회차가 돌면 transcripts commit 충돌 위험 → 직렬화.
+concurrency:
+  group: update-sermons
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # 새 transcripts commit/push
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        # whisper/torch 는 자막 파이프라인에선 불필요 → 베이스 + yt-dlp 만 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install yt-dlp==2025.1.26
+
+      - name: Fetch new sermon subtitles
+        run: python update_transcribe_and_clean.py
+
+      - name: Correct ASR errors (LLM pass)
+        run: python correct_transcripts.py
+
+      - name: Embed new sermons (incremental)
+        run: python generate_embeddings.py
+
+      - name: Commit new transcripts
+        # 새 파일이 있을 때만 commit (clean_transcripts/ corrected_transcripts/)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add clean_transcripts/ corrected_transcripts/
+          if git diff --cached --quiet; then
+            echo "변경 없음 — commit 생략"
+          else
+            ADDED=$(git diff --cached --name-only --diff-filter=A | wc -l)
+            git commit -m "chore(data): 자동 업데이트 — 새 설교 ${ADDED}건 적재"
+            git push
+          fi
