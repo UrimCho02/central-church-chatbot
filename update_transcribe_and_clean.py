@@ -181,3 +181,14 @@ if __name__ == "__main__":
 
     print(f"\n🎉 자막 수집 완료: {ok}/{len(videos)}개 → {clean_folder}/")
     print("다음 단계: python correct_transcripts.py  →  python generate_embeddings.py")
+
+    # listing 에 잡힌 영상 중 일부라도 자막 fetch 에 실패했으면 워크플로를
+    # 명시적으로 실패시킨다. 그래야 GH Actions 가 빨간 X 로 마킹되고
+    # repo owner 에게 자동 알림 메일이 발송된다(silent fail 방지).
+    # 새 영상이 0개인 경우(휴가 등)는 정상 종료.
+    if videos and ok < len(videos):
+        print(
+            f"⚠️ {len(videos) - ok}개 영상 자막 fetch 실패 — 워크플로 실패 처리 "
+            "(알림 발송용)"
+        )
+        sys.exit(1)
