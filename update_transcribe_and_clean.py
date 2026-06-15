@@ -132,13 +132,18 @@ def fetch_subtitle(stem, video_id):
         "-o", out_tmpl,
         f"https://www.youtube.com/watch?v={video_id}",
     ]
-    subprocess.run(
+    result = subprocess.run(
         command, env=_ENV, capture_output=True, text=True, encoding="utf-8"
     )
 
     vtt_path = os.path.join(sub_tmp_folder, f"{video_id}.ko.vtt")
     if not os.path.exists(vtt_path):
         print(f"  ⚠️ ko 자막 없음 — 건너뜀: {stem[:45]}")
+        # CI 진단용: yt-dlp 의 마지막 몇 줄을 같이 출력해 원인 식별을 돕는다
+        # (예: 데이터센터 IP 차단 시 YouTube 가 sign-in/consent 페이지 반환).
+        tail = (result.stderr or result.stdout or "").strip().splitlines()[-5:]
+        for ln in tail:
+            print(f"    [yt-dlp] {ln}")
         return False
 
     text = clean(vtt_to_text(vtt_path))

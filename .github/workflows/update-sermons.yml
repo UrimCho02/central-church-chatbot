@@ -44,12 +44,13 @@ jobs:
 
       - name: Install dependencies
         # whisper/torch 는 자막 파이프라인에선 불필요 → 베이스 + yt-dlp 만 설치.
-        # yt-dlp 는 YouTube extractor 변경을 따라 자주 릴리스되므로 버전 고정하지 않는다
-        # (옛 버전은 채널 listing 이 통째로 빈 결과를 반환하는 사례가 있었다).
+        # yt-dlp 는 YouTube extractor 변경을 따라 자주 릴리스되므로 버전 고정하지 않는다.
+        # curl-cffi: 브라우저 TLS impersonation. YouTube 가 데이터센터 IP(GH Actions=Azure)
+        #            를 봇으로 의심해 자막 응답을 비워 보내는 사례가 있어, 이를 우회한다.
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install --upgrade yt-dlp
+          pip install --upgrade yt-dlp curl-cffi
 
       - name: Fetch new sermon subtitles
         run: python update_transcribe_and_clean.py
