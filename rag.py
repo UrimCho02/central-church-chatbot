@@ -72,21 +72,30 @@ def generate_prompt(contexts: list[str], user_question: str) -> str:
 """
 
 
-def get_gpt_response(prompt: str) -> str:
-    response = _client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "당신은 센트럴처치(Central Church)의 신앙 상담가입니다."},
-            {"role": "user", "content": prompt},
-        ],
-    )
+# 멀티턴 컨텍스트 윈도우 — 직전 6 메시지(=3 round) 까지만 유지.
+# 너무 길어지면 토큰 비용·정확도 모두 손해라 의도적으로 짧게 둠.
+HISTORY_WINDOW = 6
+
+
+def get_gpt_response(prompt: str, history: list[dict] | None = None) -> str:
+    """history 는 [{"role": "user"|"assistant", "content": str}, ...] 가장 오래된 것부터.
+    현재 턴의 prompt 는 RAG 컨텍스트가 포함된 user 메시지로 마지막에 붙는다.
+    이전 턴의 답변에는 RAG 컨텍스트를 다시 붙이지 않는다 — 모델이 흐름만 인지하면 충분."""
+    messages = [
+        {"role": "system", "content": "당신은 센트럴처치(Central Church)의 신앙 상담가입니다."},
+    ]
+    if history:
+        messages.extend(history[-HISTORY_WINDOW:])
+    messages.append({"role": "user", "content": prompt})
+
+    response = _client.chat.completions.create(model="gpt-4o", messages=messages)
     return response.choices[0].message.content
 
 
-def answer_question(question: str) -> str:
+def answer_question(question: str, history: list[dict] | None = None) -> str:
     docs = search_similar_docs(question)
     prompt = generate_prompt(docs, question)
-    return get_gpt_response(prompt)
+    return get_gpt_response(prompt, history)
 
 
 def log_qa(question: str, answer: str) -> None:
