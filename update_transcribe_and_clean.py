@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 
+from sources import SOURCES
 from vtt_to_text import vtt_to_text
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -35,7 +36,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 # =========================
 # 경로 / 설정
 # =========================
-channel_url = "https://www.youtube.com/@centralchurch5467/videos"
 clean_folder = "clean_transcripts"
 sub_tmp_folder = "subs_tmp"
 
@@ -95,21 +95,18 @@ def clean(text):
 # =========================
 # 1. 미처리 영상 목록 추출
 # =========================
-def list_unprocessed_videos():
-    """채널 영상 중 아직 clean_transcripts 에 없는 (stem, video_id) 목록."""
-    print("🌐 유튜브 영상 목록 확인 중...")
+def list_unprocessed_videos(source, processed_titles):
+    """한 소스(채널 or 플레이리스트)의 미처리 영상 (stem, video_id) 목록.
 
-    processed_titles = {
-        normalize_name(f)
-        for f in os.listdir(clean_folder)
-        if f.lower().endswith(".txt")
-    }
+    processed_titles 는 호출측에서 한 번만 스캔해 재사용 (소스 여러 개 순회 시
+    N번 반복 스캔 방지). stem 은 source["prefix"] 가 있으면 앞에 붙인다."""
+    print(f"🌐 유튜브 영상 목록 확인 중... [{source['name']}]")
 
     command = [
         "yt-dlp", *_LANG_ARGS, *_COOKIE_ARGS, *_EJS_ARGS,
         "--flat-playlist", "-i",
         "--print", "%(title)s|||%(id)s",
-        channel_url,
+        source["url"],
     ]
     result = subprocess.run(
         command, capture_output=True, text=True, encoding="utf-8", env=_ENV
@@ -121,11 +118,13 @@ def list_unprocessed_videos():
             continue
         title, vid = line.split("|||", 1)
         stem = sanitize_title(title.strip())
+        if source["prefix"]:
+            stem = f"{source['prefix']} {stem}"
         if stem in processed_titles:
             continue
         videos.append((stem, vid.strip()))
 
-    print(f"✅ 새로 수집할 영상 수: {len(videos)}개")
+    print(f"  → 새로 수집할 영상: {len(videos)}개")
     return videos
 
 
@@ -171,24 +170,33 @@ def fetch_subtitle(stem, video_id):
 # 전체 실행
 # =========================
 if __name__ == "__main__":
-    videos = list_unprocessed_videos()
+    # 이미 저장된 stem 은 한 번만 스캔해서 모든 소스에서 재사용
+    processed_titles = {
+        normalize_name(f)
+        for f in os.listdir(clean_folder)
+        if f.lower().endswith(".txt")
+    }
+
+    all_videos = []
+    for src in SOURCES:
+        all_videos.extend(list_unprocessed_videos(src, processed_titles))
 
     ok = 0
-    for idx, (stem, vid) in enumerate(videos, 1):
-        print(f"[{idx}/{len(videos)}] 📝 자막 수집: {stem[:45]}")
+    for idx, (stem, vid) in enumerate(all_videos, 1):
+        print(f"[{idx}/{len(all_videos)}] 📝 자막 수집: {stem[:50]}")
         if fetch_subtitle(stem, vid):
             ok += 1
 
-    print(f"\n🎉 자막 수집 완료: {ok}/{len(videos)}개 → {clean_folder}/")
+    print(f"\n🎉 자막 수집 완료: {ok}/{len(all_videos)}개 → {clean_folder}/")
     print("다음 단계: python correct_transcripts.py  →  python generate_embeddings.py")
 
     # listing 에 잡힌 영상 중 일부라도 자막 fetch 에 실패했으면 워크플로를
     # 명시적으로 실패시킨다. 그래야 GH Actions 가 빨간 X 로 마킹되고
     # repo owner 에게 자동 알림 메일이 발송된다(silent fail 방지).
     # 새 영상이 0개인 경우(휴가 등)는 정상 종료.
-    if videos and ok < len(videos):
+    if all_videos and ok < len(all_videos):
         print(
-            f"⚠️ {len(videos) - ok}개 영상 자막 fetch 실패 — 워크플로 실패 처리 "
+            f"⚠️ {len(all_videos) - ok}개 영상 자막 fetch 실패 — 워크플로 실패 처리 "
             "(알림 발송용)"
         )
         sys.exit(1)
