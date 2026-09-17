@@ -57,6 +57,9 @@ ENV/
 # === 실행 로그 ===
 *.log
 
+# === 검증 스크래치 (프롬프트/RAG 튜닝 산출물, 저장소에 남길 필요 없음) ===
+verification_*.txt
+
 # === OS ===
 .DS_Store
 Thumbs.db
