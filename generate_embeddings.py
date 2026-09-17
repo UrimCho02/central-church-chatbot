@@ -4,6 +4,7 @@ import pickle
 import re
 import sys
 import time
+from collections import Counter
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -33,7 +34,7 @@ TABLE_NAME = "sermon_chunks"
 CHUNK_TARGET = 500                             # 청크 목표 글자 수(문장 경계로 ±)
 CHUNK_OVERLAP = 120                            # 청크 간 겹침 글자 수
 EMBED_BATCH = 100                              # OpenAI 임베딩 1회 요청당 청크 수
-INSERT_BATCH = 200                             # Supabase insert 1회당 행 수
+INSERT_BATCH = 20                              # HNSW 인덱스 갱신 시 statement timeout 방지
 DELETE_BATCH = 500                             # 삭제 배치 크기(전체 삭제 시 timeout 회피)
 CACHE_FILE = "_embeddings_cache.pkl"           # 임베딩 캐시(적재 실패 시 재임베딩 생략)
 
@@ -167,6 +168,41 @@ def fetch_existing_video_ids() -> set[str]:
     return seen
 
 
+def skip_cached_rows_already_inserted(rows: list[dict]) -> list[dict]:
+    """중단된 증분 적재를 재개할 때 캐시의 이미 삽입된 청크를 제외한다.
+
+    같은 설교 안에 동일 텍스트가 여러 번 나올 수 있으므로 set 대신 Counter를 쓴다.
+    """
+    existing: dict[str, Counter[str]] = {}
+    for video_id in {row["video_id"] for row in rows}:
+        counts: Counter[str] = Counter()
+        offset = 0
+        while True:
+            page = (
+                supabase.table(TABLE_NAME)
+                .select("content")
+                .eq("video_id", video_id)
+                .range(offset, offset + 999)
+                .execute()
+                .data
+            )
+            counts.update(item["content"] for item in page)
+            if len(page) < 1000:
+                break
+            offset += 1000
+        existing[video_id] = counts
+
+    remaining = []
+    for row in rows:
+        count = existing[row["video_id"]]
+        if count[row["content"]] > 0:
+            count[row["content"]] -= 1
+        else:
+            remaining.append(row)
+    print(f"[재개] 캐시 {len(rows)}개 중 이미 적재된 {len(rows) - len(remaining)}개 제외")
+    return remaining
+
+
 # 📌 6. 임베딩 (전부 메모리에 모은 뒤 적재 → 실패 시 기존 데이터 보존)
 def embed_all(chunks: list[dict]) -> list[dict]:
     rows: list[dict] = []
@@ -219,6 +255,8 @@ def main() -> None:
         print(f"[캐시] {CACHE_FILE} 에서 임베딩 로드 (재임베딩 생략)")
         with open(CACHE_FILE, "rb") as fh:
             rows = pickle.load(fh)
+        if not args.rebuild:
+            rows = skip_cached_rows_already_inserted(rows)
     else:
         chunks = build_chunks(skip_video_ids=skip_ids)
         if not chunks:
@@ -237,7 +275,9 @@ def main() -> None:
 
     inserted = 0
     for start in range(0, len(rows), INSERT_BATCH):
-        supabase.table(TABLE_NAME).insert(rows[start:start + INSERT_BATCH]).execute()
+        supabase.table(TABLE_NAME).insert(
+            rows[start:start + INSERT_BATCH], returning="minimal"
+        ).execute()
         inserted += len(rows[start:start + INSERT_BATCH])
         print(f"[적재] {inserted}/{len(rows)}개 행 insert 완료")
 

@@ -117,6 +117,8 @@ def list_unprocessed_videos(source, processed_titles):
         if "|||" not in line:
             continue
         title, vid = line.split("|||", 1)
+        if source.get("include_title") and source["include_title"] not in title:
+            continue
         stem = sanitize_title(title.strip())
         if source["prefix"]:
             stem = f"{source['prefix']} {stem}"

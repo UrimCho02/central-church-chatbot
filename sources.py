@@ -5,13 +5,14 @@
 - name:   파이프라인 로그/식별용 (파일에는 안 들어감)
 - url:    yt-dlp 가 훑을 채널 or 플레이리스트 URL
 - prefix: clean_transcripts 파일명 앞에 붙일 라벨 (None 이면 붙이지 않음)
+- include_title: 제목에 이 문자열이 있는 영상만 수집 (홍보·찬양 제외용, 선택)
 
 기존 센트럴처치는 prefix 없이 원본 파일명 규칙을 그대로 유지한다 —
 262+ 개 파일이 이미 그 규칙으로 저장돼 있어 파일명을 새로 부여하면 재임베딩이
 필요해지기 때문. 새로 추가하는 만나 시리즈에만 [만나] prefix 를 붙인다.
 
 만나교회(김병삼 목사) 최근 5년(2022~2026) 예배시리즈 + 변화산 부흥회
-플레이리스트 24개. 담임 목사 강해 위주만 선정. 찬양·컨퍼런스·인터뷰·해외
+플레이리스트 26개. 담임 목사 강해 위주만 선정. 찬양·컨퍼런스·인터뷰·해외
 콘텐츠·주중/토요예배·숏츠 등은 제외.
 """
 
@@ -24,8 +25,10 @@ SOURCES = [
         "prefix": None,
     },
     # -------- 만나교회 2026 --------
+    {"name": "manna_2026_2_byeonhwa", "url": _MANNA_PL + "PLe7jpdAsV68s", "prefix": "[만나]", "include_title": "김병삼 목사"},
+    {"name": "manna_2026_7_churches", "url": _MANNA_PL + "PLXijbBWohF2k", "prefix": "[만나]", "include_title": "김병삼 목사"},
     {"name": "manna_2026_jachi",       "url": _MANNA_PL + "PLdMv0JwvPIiAKoVAkm0Xa_Rt_5HbfZSwK", "prefix": "[만나]"},
-    {"name": "manna_2026_1_byeonhwa",  "url": _MANNA_PL + "PLdMv0JwvPIiD3dNsbKCuIO5C9t9sB7bTE", "prefix": "[만나]"},
+    {"name": "manna_2026_1_byeonhwa",  "url": _MANNA_PL + "PLdMv0JwvPIiD3dNsbKCuIO5C9t9sB7bTE", "prefix": "[만나]", "include_title": "김병삼 목사"},
     {"name": "manna_2026_belief",      "url": _MANNA_PL + "PLdMv0JwvPIiA3h3fa0I32Ni6azfkJSBig", "prefix": "[만나]"},
     # -------- 만나교회 2025 --------
     {"name": "manna_2025_2_byeonhwa",  "url": _MANNA_PL + "PLdMv0JwvPIiAFwlr4nTs7hbPmgJaw9SxL", "prefix": "[만나]"},
